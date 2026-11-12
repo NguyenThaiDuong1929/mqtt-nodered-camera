@@ -1,0 +1,6 @@
+node_modules/
+.DS_Store
+*.log
+.env
+nodered/.config.*.json
+nodered/flows_cred.json

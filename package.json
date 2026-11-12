@@ -1,0 +1,24 @@
+{
+  "name": "mqtt-nodered-project",
+  "version": "1.0.0",
+  "description": "Mô hình gửi–nhận tin nhắn qua MQTT sử dụng Node-RED (CORE PLATFORM <-> ESP32 Light & Giao tiếp 2 chiều A <-> B)",
+  "main": "src/node_red_functions.js",
+  "scripts": {
+    "nodered": "node-red -u ./nodered flows.json",
+    "start:core": "node src/publisher_core.js",
+    "start:esp32": "node src/subscriber_esp32.js"
+  },
+  "keywords": [
+    "mqtt",
+    "node-red",
+    "publish-subscribe",
+    "iot",
+    "esp32"
+  ],
+  "dependencies": {
+    "mqtt": "^5.10.1"
+  },
+  "devDependencies": {
+    "node-red": "^4.0.5"
+  }
+}
