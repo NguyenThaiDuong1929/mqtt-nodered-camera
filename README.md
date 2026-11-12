@@ -8,7 +8,17 @@ Kho lưu trữ này trình bày cách xây dựng và kiểm nghiệm mô hình 
 
 Hệ thống mô phỏng quy trình tự động hóa giữa khối xử lý trung tâm (**CORE PLATFORM**) và vi điều khiển (**ESP32 MCU**) thông qua giao thức **MQTT** với chủ đề định tuyến là `topic: light`:
 
-![Sơ đồ khối hệ thống điều khiển qua MQTT](images/diagram_camera_light.jpg)
+```mermaid
+flowchart LR
+    Cam["Camera IP"] --> Core["CORE PLATFORM"]
+    Core --> Cond1{"Kiểm tra"}
+    Cond1 -- "true: 1" --> MQTT["MQTT Broker (topic: light)"]
+    Cond1 -- "false: 0" --> MQTT
+    MQTT --> ESP32["ESP32 (MCU)"]
+    ESP32 --> Cond2{"Kiểm tra"}
+    Cond2 -- "True ('1')" --> Light(("Light: ON/OFF"))
+    Cond2 -- "false ('0')" --> Light
+```
 
 ### Giải thích luồng hoạt động theo sơ đồ:
 1. **Khối phát hiện (`Camera IP` $\rightarrow$ `CORE PLATFORM`):**
@@ -38,19 +48,19 @@ Khi lập trình MQTT bằng code thuần, chương trình luôn phải đi qua 
 
 ```mermaid
 flowchart LR
-    subgraph Bên Gửi (Publisher)
-        I["Node inject<br/>(Tạo sự kiện gửi)"] --> F1["Node function<br/>(Code gán topic & payload)"]
-        F1 --> MO["Node mqtt out<br/>(Publish lên Broker)"]
+    subgraph Pub["Bên Gửi (Publisher)"]
+        I["Node inject: Tạo sự kiện gửi"] --> F1["Node function: Gán topic & payload"]
+        F1 --> MO["Node mqtt out: Publish lên Broker"]
     end
 
-    MO ==> B(("MQTT Broker"))
+    MO --> B(("MQTT Broker"))
 
-    subgraph Bên Nhận (Subscriber)
-        MI["Node mqtt in<br/>(Subscribe theo topic)"] --> F2["Node function<br/>(Code đọc & rẽ nhánh)"]
-        F2 --> D["Node debug<br/>(Hiển thị kết quả)"]
+    subgraph Sub["Bên Nhận (Subscriber)"]
+        MI["Node mqtt in: Subscribe theo topic"] --> F2["Node function: Đọc & xử lý"]
+        F2 --> D["Node debug: Hiển thị kết quả"]
     end
 
-    B ==> MI
+    B --> MI
 ```
 
 * **Cấu hình kết nối Broker:** Được thiết lập trong mục `Server` của hai node `mqtt in` và `mqtt out` (trỏ tới địa chỉ và cổng của Broker, mặc định là cổng `1883`).
