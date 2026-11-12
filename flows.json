@@ -1,16 +1,23 @@
 [
     {
+        "id": "tab_camera_light",
+        "type": "tab",
+        "label": "1. Bài toán Camera IP -> CORE PLATFORM -> ESP32 (Light)",
+        "disabled": false,
+        "info": "Mô phỏng sơ đồ: Camera IP -> CORE PLATFORM -> (true:1 / false:0) -> MQTT (topic: light) -> ESP32 (MCU) -> (True / false) -> Light"
+    },
+    {
         "id": "tab_mqtt_basic",
         "type": "tab",
-        "label": "Mô hình Giao tiếp MQTT (Bên A <-> Bên B)",
+        "label": "2. Mô hình Lý thuyết (Bên A <-> Bên B & 5 Bài Test)",
         "disabled": false,
         "info": "Mô hình gửi–nhận tin nhắn 2 chiều qua MQTT và kiểm thử các tính năng lý thuyết"
     },
     {
         "id": "mqtt_broker_local",
         "type": "mqtt-broker",
-        "name": "Local Broker",
-        "broker": "localhost",
+        "name": "MQTT Broker",
+        "broker": "broker.emqx.io",
         "port": "1883",
         "clientid": "",
         "autoConnect": true,
@@ -18,6 +25,168 @@
         "protocolVersion": "4",
         "keepalive": "60",
         "cleansession": true
+    },
+    {
+        "id": "inject_cam_true",
+        "type": "inject",
+        "z": "tab_camera_light",
+        "name": "Camera IP: true (Phát hiện)",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "true",
+        "payloadType": "bool",
+        "x": 180,
+        "y": 100,
+        "wires": [
+            [
+                "func_core_platform"
+            ]
+        ]
+    },
+    {
+        "id": "inject_cam_false",
+        "type": "inject",
+        "z": "tab_camera_light",
+        "name": "Camera IP: false (Không có)",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "false",
+        "payloadType": "bool",
+        "x": 180,
+        "y": 160,
+        "wires": [
+            [
+                "func_core_platform"
+            ]
+        ]
+    },
+    {
+        "id": "func_core_platform",
+        "type": "function",
+        "z": "tab_camera_light",
+        "name": "CORE PLATFORM (Rẽ nhánh true:1 / false:0)",
+        "func": "// 1. Nhận kết quả từ Camera IP (true hoặc false)\nconst cameraDetected = msg.payload;\n\n// 2. Chọn topic theo đúng sơ đồ: topic: light\nmsg.topic = \"light\";\n\n// 3. Khối hình thoi rẽ nhánh phía CORE PLATFORM\nif (cameraDetected === true) {\n    msg.payload = \"1\"; // Nhánh true:1\n} else {\n    msg.payload = \"0\"; // Nhánh false:0\n}\n\nreturn msg;",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 510,
+        "y": 130,
+        "wires": [
+            [
+                "mqtt_out_light",
+                "debug_core_publish"
+            ]
+        ]
+    },
+    {
+        "id": "mqtt_out_light",
+        "type": "mqtt out",
+        "z": "tab_camera_light",
+        "name": "mqtt out (topic: light)",
+        "topic": "",
+        "qos": "0",
+        "retain": "false",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "mqtt_broker_local",
+        "x": 820,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "debug_core_publish",
+        "type": "debug",
+        "z": "tab_camera_light",
+        "name": "CORE gửi đi",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": true,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "payload",
+        "statusType": "auto",
+        "x": 800,
+        "y": 160,
+        "wires": []
+    },
+    {
+        "id": "mqtt_in_esp32",
+        "type": "mqtt in",
+        "z": "tab_camera_light",
+        "name": "mqtt in: ESP32 (topic: light)",
+        "topic": "light",
+        "qos": "0",
+        "datatype": "utf8",
+        "broker": "mqtt_broker_local",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 180,
+        "y": 300,
+        "wires": [
+            [
+                "func_esp32_mcu"
+            ]
+        ]
+    },
+    {
+        "id": "func_esp32_mcu",
+        "type": "function",
+        "z": "tab_camera_light",
+        "name": "ESP32 (MCU) - Kiểm tra True / false",
+        "func": "// 1. Đọc payload nhận được từ topic: light\nconst payload = String(msg.payload).trim();\n\n// 2. Khối hình thoi kiểm tra điều kiện phía ESP32 (MCU)\nif (payload === \"1\") {\n    // Nhánh True -> Bật đèn Light\n    msg.condition = \"True\";\n    msg.lightStatus = \"LIGHT ON (Bật đèn)\";\n    node.status({ fill: \"green\", shape: \"dot\", text: \"True -> Light: ON\" });\n} else {\n    // Nhánh false -> Tắt đèn Light\n    msg.condition = \"false\";\n    msg.lightStatus = \"LIGHT OFF (Tắt đèn)\";\n    node.status({ fill: \"grey\", shape: \"ring\", text: \"false -> Light: OFF\" });\n}\n\nreturn msg;",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 500,
+        "y": 300,
+        "wires": [
+            [
+                "debug_light"
+            ]
+        ]
+    },
+    {
+        "id": "debug_light",
+        "type": "debug",
+        "z": "tab_camera_light",
+        "name": "Light (Kết quả tại Đèn)",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": true,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "lightStatus",
+        "statusType": "msg",
+        "x": 820,
+        "y": 300,
+        "wires": []
     },
     {
         "id": "inject_a_send",

@@ -1,36 +1,24 @@
 # Mô hình Gửi–Nhận Tin nhắn qua MQTT với Node-RED
 
-Bài thực hành minh họa giao tiếp tin nhắn theo mô hình **Publish/Subscribe** của giao thức **MQTT**, sử dụng **Node-RED** để tạo bên gửi, bên nhận, xử lý thông điệp và kiểm nghiệm các tính năng lý thuyết (Topic, Wildcard, QoS, Retained Message).
+Bài thực hành xây dựng chương trình minh họa giao tiếp tin nhắn theo mô hình **Publish/Subscribe** của giao thức **MQTT** bằng **Node-RED** (`mqtt out`, `mqtt in`, `function`, `inject`, `debug`), bao gồm:
+1. **Mô phỏng bài toán điều khiển đèn từ Camera IP:** `Camera IP` $\rightarrow$ `CORE PLATFORM` $\rightarrow$ `MQTT (topic: light)` $\rightarrow$ `ESP32 (MCU)` $\rightarrow$ `Light`.
+2. **Mô hình giao tiếp hai chiều (`Bên A` $\leftrightarrow$ `Bên B`) và 5 bài kiểm thử lý thuyết** (Topic, 1–N, Wildcard, Retained Message, QoS).
 
 ---
 
 ## 1. Nguyên lý giao tiếp MQTT
 
-Trong MQTT, bên gửi (**Publisher**) không gửi trực tiếp đến địa chỉ của bên nhận (**Subscriber**), mà gửi thông điệp vào một chủ đề (**Topic**) trên **Broker**. Broker tiếp nhận và phân phối thông điệp tới tất cả các bên đã đăng ký (subscribe) chủ đề tương ứng.
+Trong MQTT, bên gửi (**Publisher**) không gửi trực tiếp đến địa chỉ của bên nhận (**Subscriber**), mà xuất bản thông điệp vào một chủ đề (**Topic**) trên **Broker**. Broker tiếp nhận và phân phối thông điệp tới các bên đã đăng ký (subscribe) chủ đề phù hợp.
 
-```mermaid
-flowchart TD
-    A["Bên A (Publisher)"] -- "publish 'Xin chào B'<br/>(topic: demo/a_to_b)" --> Broker["MQTT Broker"]
-    Broker -- "Phân phối theo topic" --> B["Bên B (Subscriber)"]
-```
-
-**Ba thành phần cốt lõi:**
 * **Broker:** Trạm trung gian tiếp nhận và phân phối tin nhắn.
-* **Topic:** Chủ đề dùng để định tuyến tin nhắn.
-* **Payload:** Nội dung dữ liệu của tin nhắn.
-
-**Quy ước topic minh họa giao tiếp hai chiều:**
-
-| Chiều giao tiếp | Topic | Payload ví dụ |
-| :--- | :--- | :--- |
-| **A gửi B** | `demo/a_to_b` | `Xin chào B` |
-| **B gửi A** | `demo/b_to_a` | `B đã nhận được tin nhắn` |
+* **Topic:** Chủ đề dùng để định tuyến tin nhắn (ví dụ: `light`, `demo/a_to_b`, `demo/b_to_a`).
+* **Payload:** Nội dung tin nhắn (ví dụ: `"1"`, `"0"`, `"Xin chào B"`, hoặc chuỗi JSON).
 
 ---
 
 ## 2. Đối chiếu giữa Code giao tiếp và Node-RED
 
-Ở mức lý thuyết, cấu trúc một chương trình giao tiếp MQTT gồm các bước:
+Ở mức lý thuyết, chương trình MQTT gồm các bước:
 
 ```text
 Khởi tạo MQTT client
@@ -50,91 +38,146 @@ Khi nhận tin nhắn:
     Hiển thị hoặc xử lý nội dung
 ```
 
-Trong **Node-RED**, các bước trên được ánh xạ trực tiếp sang từng node:
+Khi thực hiện trên **Node-RED**, các thành phần trong code tương ứng với:
 
 | Logic trong chương trình | Cách thể hiện trong Node-RED |
 | :--- | :--- |
-| Cấu hình và kết nối Broker | Cấu hình **Server** (`localhost:1883`) của node MQTT |
-| Tạo sự kiện gửi | Node `inject` |
-| Chuẩn bị `topic` và `payload` | Node `function` (hoặc cấu hình trực tiếp trên `inject`) |
-| Publish thông điệp | Node `mqtt out` |
+| Cấu hình và kết nối Broker | Cấu hình **Server** của node MQTT |
+| Tạo sự kiện gửi (Trigger) | Node `inject` |
+| Chuẩn bị `topic`, `payload` và xử lý rẽ nhánh | Node `function` |
+| Publish thông điệp lên Broker | Node `mqtt out` |
 | Subscribe và tiếp nhận thông điệp | Node `mqtt in` |
 | Quan sát kết quả | Node `debug` |
 
 ---
 
-## 3. Mô hình Test hai chiều trên Node-RED
+## 3. Áp dụng vào bài toán: `Camera IP` $\rightarrow$ `CORE PLATFORM` $\rightarrow$ `ESP32 (Light)`
 
-Trên cùng một workspace của Node-RED, hai vai trò **Bên A** và **Bên B** được thiết kế như sau:
+### 3.1. Sơ đồ luồng xử lý
+
+```mermaid
+flowchart LR
+    Cam["Camera IP"] --> Core["CORE PLATFORM"]
+    Core --> Cond1{"Kiểm tra"}
+    Cond1 -- "true: 1" --> MQTT[/"MQTT Broker<br/>(topic: light)"/]
+    Cond1 -- "false: 0" --> MQTT
+    MQTT --> ESP32["ESP32 (MCU)"]
+    ESP32 --> Cond2{"Kiểm tra"}
+    Cond2 -- "True ('1')" --> Light(("Light (ON/OFF)"))
+    Cond2 -- "false ('0')" --> Light
+```
+
+### 3.2. Cách dựng và viết Code trong Node-RED (Tab 1)
+
+Không cần phần cứng Camera hay mạch ESP32 thật, toàn bộ luồng gửi – nhận – kiểm tra điều kiện được mô phỏng trực tiếp trên Node-RED:
+
+```text
+NHÁNH GỬI (CORE PLATFORM):
+[inject: Camera IP = true/false] -> [function: CORE PLATFORM] -> [mqtt out: topic "light"]
+
+NHÁNH NHẬN (ESP32 MCU):
+[mqtt in: topic "light"] -> [function: ESP32 (MCU)] -> [debug: Light]
+```
+
+* **Code trong node `function: CORE PLATFORM` (Bên gửi):**
+  ```javascript
+  // 1. Nhận kết quả từ Camera IP (true hoặc false)
+  const cameraDetected = msg.payload;
+
+  // 2. Chọn topic theo đúng sơ đồ: topic: light
+  msg.topic = "light";
+
+  // 3. Khối hình thoi rẽ nhánh phía CORE PLATFORM
+  if (cameraDetected === true) {
+      msg.payload = "1"; // Nhánh true:1
+  } else {
+      msg.payload = "0"; // Nhánh false:0
+  }
+
+  return msg;
+  ```
+
+* **Code trong node `function: ESP32 (MCU)` (Bên nhận & xử lý tin nhắn):**
+  ```javascript
+  // 1. Đọc payload nhận được từ topic: light
+  const payload = String(msg.payload).trim();
+
+  // 2. Khối hình thoi kiểm tra điều kiện phía ESP32 (MCU)
+  if (payload === "1") {
+      // Nhánh True -> Bật đèn Light
+      msg.condition = "True";
+      msg.lightStatus = "LIGHT ON (Bật đèn)";
+      node.status({ fill: "green", shape: "dot", text: "True -> Light: ON" });
+  } else {
+      // Nhánh false -> Tắt đèn Light
+      msg.condition = "false";
+      msg.lightStatus = "LIGHT OFF (Tắt đèn)";
+      node.status({ fill: "grey", shape: "ring", text: "false -> Light: OFF" });
+  }
+
+  return msg;
+  ```
+
+---
+
+## 4. Mô hình Test hai chiều (`Bên A` $\leftrightarrow$ `Bên B`) và Truyền JSON (Tab 2)
 
 ```text
 BÊN A
-[inject] -> [function: tạo tin A] -> [mqtt out: demo/a_to_b]
+[inject: A gửi tin] -> [function: tạo tin A] -> [mqtt out: demo/a_to_b]
 [mqtt in: demo/b_to_a] -> [debug: A nhận]
 
 BÊN B
 [mqtt in: demo/a_to_b] -> [debug: B nhận]
-[inject] -> [function: tạo tin B] -> [mqtt out: demo/b_to_a]
+[inject: B gửi tin] -> [function: tạo tin B] -> [mqtt out: demo/b_to_a]
 ```
 
-### 3.1. Code tạo tin nhắn của Bên A
-Trong node `function: tạo tin A`:
-```javascript
-msg.topic = "demo/a_to_b";
-msg.payload = "Xin chào B";
-return msg;
-```
-* `msg.topic`: xác định chủ đề gửi.
-* `msg.payload`: chứa nội dung tin nhắn.
-* `return msg`: chuyển đối tượng thông điệp đến node `mqtt out` tiếp theo trong flow (trường Topic trên node `mqtt out` được để trống để tự động lấy từ `msg.topic`).
+* **Code tạo tin nhắn của A (`demo/a_to_b`):**
+  ```javascript
+  msg.topic = "demo/a_to_b";
+  msg.payload = "Xin chào B";
+  return msg;
+  ```
+* **Code tạo tin nhắn của B (`demo/b_to_a`):**
+  ```javascript
+  msg.topic = "demo/b_to_a";
+  msg.payload = "B đã nhận được tin nhắn";
+  return msg;
+  ```
+* **Phân biệt đối tượng `msg` trong Flow và gói tin MQTT (Gửi nhiều trường bằng JSON):**
+  Node `mqtt out` chỉ lấy `msg.topic` làm chủ đề và `msg.payload` làm nội dung gửi qua MQTT, không tự động truyền toàn bộ các thuộc tính khác của biến `msg`. Khi cần truyền nhiều trường dữ liệu (ví dụ cả trạng thái Camera, tên thiết bị, nội dung), ta đóng gói thành chuỗi JSON:
+  ```javascript
+  msg.topic = "demo/a_to_b";
 
-### 3.2. Code tạo tin nhắn của Bên B
-Trong node `function: tạo tin B`:
-```javascript
-msg.topic = "demo/b_to_a";
-msg.payload = "B đã nhận được tin nhắn";
-return msg;
-```
+  msg.payload = JSON.stringify({
+      sender: "A",
+      text: "Xin chào B"
+  });
+
+  return msg;
+  ```
 
 ---
 
-## 4. Phân biệt đối tượng `msg` trong Flow và tin nhắn MQTT
+## 5. Các tính năng kiểm thử và Ý nghĩa lý thuyết
 
-Trong Node-RED, `msg` là đối tượng JavaScript được truyền qua các node trong flow. Khi đi vào node `mqtt out`, chỉ có `msg.topic` được dùng làm chủ đề xuất bản và `msg.payload` được gửi đi làm nội dung gói tin MQTT (toàn bộ các thuộc tính nội bộ khác của `msg` không tự động truyền qua MQTT).
-
-Nếu muốn gửi nhiều trường dữ liệu cùng lúc, bên gửi chủ động đóng gói thành chuỗi **JSON**:
-
-```javascript
-msg.topic = "demo/a_to_b";
-
-msg.payload = JSON.stringify({
-    sender: "A",
-    text: "Xin chào B"
-});
-
-return msg;
-```
-Ở phía nhận (`mqtt in`), chọn định dạng đầu ra là JSON (hoặc `auto-detect`) để chuyển chuỗi JSON ngược lại thành đối tượng và truy cập `msg.payload.sender`, `msg.payload.text`.
-
----
-
-## 5. Các tính năng thực nghiệm và Ý nghĩa lý thuyết
-
-| Bài Test | Cấu hình thử nghiệm trên Node-RED | Kết quả & Ý nghĩa lý thuyết |
+| Bài Test | Cách thực hiện trên Node-RED | Kết quả & Ý nghĩa lý thuyết |
 | :--- | :--- | :--- |
-| **Test 1: Topic quyết định bên nhận** | Giữ A gửi đến `demo/a_to_b`, đổi topic đăng ký của B thành `demo/other`. | B không nhận được tin của A vì topic không khớp. Chứng minh Broker định tuyến thông điệp hoàn toàn dựa trên sự trùng khớp giữa topic gửi và bộ lọc đăng ký của subscriber. |
-| **Test 2: Một bên gửi, nhiều bên nhận** | Thêm một node `mqtt in` thứ hai cùng đăng ký `demo/a_to_b` và nối vào `debug`. | Khi A gửi tin, cả hai nhánh nhận đều nhận được cùng nội dung. Chứng minh MQTT hỗ trợ phân phối thông điệp một–nhiều (broadcast/multicast theo topic). |
-| **Test 3: Đăng ký nhiều topic bằng Wildcard** | Đổi topic của một node `mqtt in` thành `demo/#`. | Node này nhận được cả tin từ `demo/a_to_b` lẫn `demo/b_to_a`. Ký hiệu `+` đại diện cho 1 cấp topic và `#` đại diện cho nhiều cấp topic trong bộ lọc đăng ký. |
-| **Test 4: Retained Message** | Bật tùy chọn **Retain** (`msg.retain = true`) trên `mqtt out`, gửi `"Trạng thái mới nhất: sẵn sàng"`, sau đó cho một subscriber mới đăng ký đúng topic. | Subscriber mới nhận ngay thông điệp mà không cần bên gửi gửi lại. Broker lưu lại thông điệp retained gần nhất của topic (không phải lịch sử toàn bộ cuộc trò chuyện). |
-| **Test 5: Quality of Service (QoS)** | Thay đổi cấu hình QoS của các node qua 3 mức: `0`, `1`, `2`. | **QoS 0:** Tối đa 1 lần (có thể mất tin, không xác nhận).<br>**QoS 1:** Ít nhất 1 lần (có xác nhận, có thể trùng).<br>**QoS 2:** Đúng 1 lần trên chặng MQTT.<br>*(Trong mạng local bình thường, kết quả trên Debug giống nhau vì chưa có hiện tượng rớt mạng).* |
+| **Test 1: Topic quyết định bên nhận** | Giữ bên gửi publish vào `demo/a_to_b` (hoặc `light`), đổi topic của `mqtt in` bên nhận thành `demo/other`. | Bên nhận không nhận được tin vì topic không khớp. Broker chỉ định tuyến thông điệp dựa trên sự trùng khớp của topic. |
+| **Test 2: Một bên gửi, nhiều bên nhận** | Tạo thêm một node `mqtt in` thứ hai cùng đăng ký một topic (`demo/a_to_b` hoặc `light`). | Khi bên gửi publish 1 lần, cả hai nhánh nhận đều nhận được cùng nội dung. Chứng minh khả năng phân phối một–nhiều của MQTT. |
+| **Test 3: Đăng ký nhiều topic bằng Wildcard** | Đổi topic của một node `mqtt in` thành `demo/#`. | Nhận được tất cả thông điệp thuộc nhánh `demo`, gồm cả `demo/a_to_b` và `demo/b_to_a` (`+` khớp 1 cấp, `#` khớp nhiều cấp). |
+| **Test 4: Retained Message** | Bật **Retain** (`msg.retain = true`) trên `mqtt out`, gửi `"Trạng thái mới nhất: sẵn sàng"`, sau đó cho một subscriber mới đăng ký vào topic đó. | Subscriber mới nhận ngay thông điệp retained gần nhất mà không cần bên gửi gửi lại. |
+| **Test 5: Quality of Service (QoS)** | Cấu hình thử nghiệm 3 mức QoS (`0`, `1`, `2`) trên các node MQTT. | **QoS 0:** Có thể mất tin, không xác nhận.<br>**QoS 1:** Chuyển giao ít nhất một lần, có thể trùng.<br>**QoS 2:** Chuyển giao đúng một lần trên chặng MQTT. |
 
 ---
 
-## 6. Kết quả chạy thử trên Node-RED
+## 6. Hình ảnh minh họa
 
-*(Lưu ảnh chụp màn hình vào thư mục `images/` và hiển thị tại đây)*
+*(Đặt ảnh sơ đồ và ảnh chụp màn hình Node-RED vào thư mục `images/`)*
 
-* **Sơ đồ Flow và giao tiếp 2 chiều A $\leftrightarrow$ B:**
-  `![Giao tiếp 2 chiều A và B](images/test_two_way.png)`
-* **Kết quả Test 1 – Test 5 trên cửa sổ Debug:**
-  `![Kết quả Debug các bài test](images/test_experiments.png)`
+* **Sơ đồ hệ thống điều khiển đèn qua MQTT (`topic: light`):**
+  `![Sơ đồ hệ thống](images/diagram_camera_light.png)`
+* **Kết quả chạy mô hình Camera IP $\rightarrow$ CORE PLATFORM $\rightarrow$ ESP32 (Light) trên Node-RED:**
+  `![Kết quả Tab 1](images/nodered_camera_light.png)`
+* **Kết quả giao tiếp hai chiều và các bài test lý thuyết:**
+  `![Kết quả Tab 2](images/nodered_mqtt_tests.png)`
