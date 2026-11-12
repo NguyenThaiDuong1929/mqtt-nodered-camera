@@ -4,3 +4,4 @@ node_modules/
 .env
 nodered/.config.*.json
 nodered/flows_cred.json
+
